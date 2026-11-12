@@ -1,0 +1,57 @@
+name: Deploy to EC2
+
+# main 브랜치에 push 하면: Docker 빌드 검사 → EC2 에 SSH 접속 → deploy/deploy.sh 실행
+# Actions 탭에서 수동 실행(Run workflow)도 가능
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 배포가 동시에 두 번 돌지 않도록
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Docker build check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t fastapi-movie-backend ./backend
+      - name: Build frontend image
+        run: docker build -t fastapi-movie-frontend ./frontend
+
+  deploy:
+    name: Deploy
+    needs: build
+    # 저장소 Variables 에 DEPLOY_ENABLED=true 를 설정해야 배포가 실행됨
+    # (EC2 준비 전에는 빌드 검사만 수행)
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run deploy script on EC2
+        env:
+          HOST: ${{ secrets.EC2_HOST }}
+          USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=30 "$USER@$HOST" \
+            'bash ~/fastapi-movie/deploy/deploy.sh'
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
