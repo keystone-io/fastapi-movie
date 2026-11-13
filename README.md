@@ -69,7 +69,25 @@ npm run dev
 | `deploy/deploy.sh` | 서버에서 최신 코드 받아 재빌드/재실행 + 헬스 체크 |
 | `.github/workflows/deploy.yml` | main push 시 빌드 검사 → EC2 SSH 배포 |
 
-### 최초 1회
+### AWS 리소스 생성 / 삭제 (스크립트, 로컬 PC 의 Git Bash 에서 실행)
+
+사전 준비: AWS CLI 로그인(`aws login`), `backend/.env` 에 TMDB 키
+
+```bash
+bash deploy/aws-create.sh --dry-run   # 권한/설정 확인만 (아무것도 만들지 않음)
+bash deploy/aws-create.sh             # 키페어·보안그룹·EC2·고정IP 생성 → 서버 설정 → .env 복사 → 배포
+
+bash deploy/aws-destroy.sh --dry-run  # 삭제 대상만 확인
+bash deploy/aws-destroy.sh            # 프로젝트 이름 입력 후 전부 삭제 (요금 0)
+```
+
+- 기본 리전은 **시드니(ap-southeast-2)**. 이 계정은 조직 정책(SCP)으로 서울 리전이 막혀 있다.
+- 설정 변경은 환경변수로: `AWS_REGION`, `INSTANCE_TYPE`(t3.micro), `VOLUME_SIZE`(20), `SSH_CIDR`(0.0.0.0/0), `USE_EIP`(true)
+- 생성 리소스는 모두 `Project=fastapi-movie` 태그가 붙고, 삭제 스크립트는 이 태그로 찾아 지운다.
+- 생성이 끝나면 GitHub Secrets(`EC2_HOST`, `EC2_SSH_KEY`)를 새 값으로 수정해야 자동 배포가 된다. (스크립트가 값을 안내함)
+- 키 파일은 `~/.ssh/fastapi-movie-key.pem` 에 저장된다. GitHub 에 없는 것은 이 키와 `backend/.env` 뿐이다.
+
+### 수동으로 할 경우 (최초 1회)
 1. EC2(Ubuntu 24.04) 생성, 보안그룹 22(SSH)/80(HTTP) 허용
 2. 서버 접속 후 `curl -fsSL https://raw.githubusercontent.com/keystone-io/fastapi-movie/main/deploy/setup-server.sh | bash`
 3. 로컬에서 키 복사: `scp -i <키.pem> backend/.env ubuntu@<서버IP>:~/fastapi-movie/backend/.env`
